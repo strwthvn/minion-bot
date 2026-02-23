@@ -6,4 +6,5 @@ services:
       - .env
     volumes:
       - ./src:/app/src
+      - ./data:/app/data
     command: node --watch src/index.js
