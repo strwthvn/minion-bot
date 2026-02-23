@@ -4,3 +4,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - ./src:/app/src
+    command: node --watch src/index.js
