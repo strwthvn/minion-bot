@@ -6,6 +6,7 @@ const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js'
 const { getDb, close: closeDb } = require('./database/connection');
 const { handleReactionAdd, handleReactionRemove } = require('./handlers/reactionHandler');
 const { handleVoiceStateUpdate } = require('./handlers/voiceMoveHandler');
+const { handleMention } = require('./handlers/mentionHandler');
 const reminderService = require('./services/reminderService');
 
 const client = new Client({
@@ -14,6 +15,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
   ],
   partials: [
     Partials.Message,
@@ -83,6 +85,9 @@ client.on('interactionCreate', async (interaction) => {
 // Reactions
 client.on('messageReactionAdd', (reaction, user) => handleReactionAdd(reaction, user, client));
 client.on('messageReactionRemove', (reaction, user) => handleReactionRemove(reaction, user, client));
+
+// Mentions
+client.on('messageCreate', (message) => handleMention(message, client));
 
 // Voice moves
 client.on('voiceStateUpdate', (oldState, newState) => handleVoiceStateUpdate(oldState, newState));
