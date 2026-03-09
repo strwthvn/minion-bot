@@ -1,0 +1,28 @@
+name: Предложение
+description: Предложить новую функцию или улучшение
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Идея
+      description: Опиши, что хочешь добавить или изменить
+      placeholder: Было бы круто, если бот мог...
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Зачем это нужно
+      description: Какую проблему это решает или что улучшает?
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Детали
+      description: Дополнительные подробности, примеры, скриншоты
+    validations:
+      required: false
