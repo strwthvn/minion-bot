@@ -1,4 +1,3 @@
-const { EVENTS_CHANNEL_ID } = require('../config');
 const eventService = require('./eventService');
 const participantService = require('./participantService');
 const embedService = require('./embedService');
@@ -38,13 +37,15 @@ const reminderService = {
       if (diff <= 0) {
         eventService.setStatus(event.id, 'completed');
 
-        try {
-          const channel = await client.channels.fetch(EVENTS_CHANNEL_ID);
-          const participants = participantService.getAll(event.id);
-          const updatedEvent = eventService.getById(event.id);
-          await embedService.update(channel, updatedEvent, participants);
-        } catch (err) {
-          console.error(`Failed to update completed event #${event.id}:`, err.message);
+        if (event.channel_id) {
+          try {
+            const channel = await client.channels.fetch(event.channel_id);
+            const participants = participantService.getAll(event.id);
+            const updatedEvent = eventService.getById(event.id);
+            await embedService.update(channel, updatedEvent, participants);
+          } catch (err) {
+            console.error(`Failed to update completed event #${event.id}:`, err.message);
+          }
         }
         continue;
       }
@@ -54,8 +55,10 @@ const reminderService = {
         if (diff <= threshold.ms && !event[threshold.flag]) {
           eventService.setReminderFlag(event.id, threshold.flag);
 
+          if (!event.channel_id) continue;
+
           try {
-            const channel = await client.channels.fetch(EVENTS_CHANNEL_ID);
+            const channel = await client.channels.fetch(event.channel_id);
             const mainParticipants = participantService.getMain(event.id);
             const mentions = mainParticipants.map(p => `<@${p.user_id}>`).join(' ');
 

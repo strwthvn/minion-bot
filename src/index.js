@@ -68,6 +68,10 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isUserSelectMenu() && interaction.customId.startsWith('event-')) {
       return await eventCommand.handleUserSelect(interaction);
     }
+
+    if (interaction.isChannelSelectMenu() && interaction.customId.startsWith('event-')) {
+      return await eventCommand.handleChannelSelect(interaction);
+    }
   } catch (error) {
     console.error('Interaction error:', error);
 

@@ -9,9 +9,10 @@ const {
   ButtonStyle,
   StringSelectMenuBuilder,
   UserSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   ComponentType,
 } = require('discord.js');
-const { EVENTS_CHANNEL_ID } = require('../config');
 const eventService = require('../services/eventService');
 const participantService = require('../services/participantService');
 const embedService = require('../services/embedService');
@@ -27,7 +28,16 @@ module.exports = {
     .setName('event')
     .setDescription('Управление ивентами')
     .addSubcommand(sub =>
-      sub.setName('create').setDescription('Создать новый ивент'),
+      sub
+        .setName('create')
+        .setDescription('Создать новый ивент')
+        .addChannelOption(opt =>
+          opt
+            .setName('channel')
+            .setDescription('Канал для постинга ивента (по умолчанию — текущий)')
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            .setRequired(false),
+        ),
     )
     .addSubcommand(sub =>
       sub
@@ -75,13 +85,22 @@ module.exports = {
   handleStringSelect,
   handleRoleSelect,
   handleUserSelect,
+  handleChannelSelect,
 };
 
 // ─── CREATE ──────────────────────────────────────────────
 
 async function handleCreate(interaction) {
+  const targetChannel = interaction.options.getChannel('channel') ?? interaction.channel;
+  if (!targetChannel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(targetChannel.type)) {
+    return interaction.reply({
+      content: '❌ Команда должна вызываться из текстового канала или с явно указанной опцией `channel`.',
+      flags: 64,
+    });
+  }
+
   const modal = new ModalBuilder()
-    .setCustomId('event-create-modal')
+    .setCustomId(`event-create-modal:${targetChannel.id}`)
     .setTitle('Создать ивент');
 
   modal.addComponents(
@@ -209,6 +228,7 @@ async function handleEdit(interaction) {
       { label: 'Изменить реакции', value: 'reactions' },
       { label: 'Добавить участника', value: 'add_user' },
       { label: 'Убрать участника', value: 'remove_user' },
+      { label: 'Перенести в другой канал', value: 'channel' },
     );
 
   await interaction.reply({
@@ -257,7 +277,7 @@ async function handleCancel(interaction) {
 async function handleModal(interaction) {
   const customId = interaction.customId;
 
-  if (customId === 'event-create-modal') {
+  if (customId.startsWith('event-create-modal:')) {
     return handleCreateModalSubmit(interaction);
   }
 
@@ -314,9 +334,18 @@ async function handleUserSelect(interaction) {
   }
 }
 
+async function handleChannelSelect(interaction) {
+  const customId = interaction.customId;
+
+  if (customId.startsWith('event-edit-channel:')) {
+    return handleEditChannelSelect(interaction);
+  }
+}
+
 // ─── CREATE FLOW ─────────────────────────────────────────
 
 async function handleCreateModalSubmit(interaction) {
+  const channelId = interaction.customId.split(':')[1];
   const name = interaction.fields.getTextInputValue('name');
   const description = interaction.fields.getTextInputValue('description');
   const datetimeStr = interaction.fields.getTextInputValue('datetime');
@@ -344,7 +373,7 @@ async function handleCreateModalSubmit(interaction) {
 
   // Store temp data keyed by user ID
   const userId = interaction.user.id;
-  pendingCreates.set(userId, { name, description, dateTime: parsed.date.toISOString(), limit, reactions });
+  pendingCreates.set(userId, { name, description, dateTime: parsed.date.toISOString(), limit, reactions, channelId });
 
   const roleSelect = new RoleSelectMenuBuilder()
     .setCustomId(`event-create-role:${userId}`)
@@ -393,23 +422,24 @@ async function finalizeEventCreation(interaction, data, pingRoleId) {
     pingRoleId,
     participantLimit: data.limit,
     reactions: data.reactions,
+    channelId: data.channelId,
   });
 
   const event = eventService.getById(eventId);
 
   try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
+    const channel = await interaction.client.channels.fetch(data.channelId);
     const message = await embedService.postNew(channel, event, []);
     eventService.setMessageId(eventId, message.id);
 
     await interaction.update({
-      content: `✅ Ивент **#${eventId} — ${data.name}** создан!`,
+      content: `✅ Ивент **#${eventId} — ${data.name}** создан в <#${data.channelId}>!`,
       components: [],
     });
   } catch (err) {
     console.error('Failed to post event embed:', err);
     await interaction.update({
-      content: `⚠️ Ивент создан (ID: ${eventId}), но не удалось отправить сообщение в канал.`,
+      content: `⚠️ Ивент создан (ID: ${eventId}), но не удалось отправить сообщение в канал <#${data.channelId}>. Проверьте права бота.`,
       components: [],
     });
   }
@@ -479,16 +509,18 @@ async function handleCancelConfirm(interaction) {
   const mainParticipants = participantService.getMain(eventId);
   const mentions = mainParticipants.map(p => `<@${p.user_id}>`).join(' ');
 
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    if (mentions) {
-      await channel.send(`❌ Ивент **${event.name}** отменён!\n${mentions}`);
+  if (event.channel_id) {
+    try {
+      const channel = await interaction.client.channels.fetch(event.channel_id);
+      if (mentions) {
+        await channel.send(`❌ Ивент **${event.name}** отменён!\n${mentions}`);
+      }
+      const participants = participantService.getAll(eventId);
+      const updatedEvent = eventService.getById(eventId);
+      await embedService.update(channel, updatedEvent, participants);
+    } catch (err) {
+      console.error('Failed to notify about cancellation:', err);
     }
-    const participants = participantService.getAll(eventId);
-    const updatedEvent = eventService.getById(eventId);
-    await embedService.update(channel, updatedEvent, participants);
-  } catch (err) {
-    console.error('Failed to notify about cancellation:', err);
   }
 
   await interaction.update({ content: `✅ Ивент **#${eventId}** отменён.`, components: [] });
@@ -615,6 +647,18 @@ async function handleEditAction(interaction) {
       components: [new ActionRowBuilder().addComponents(userSelect)],
     });
   }
+
+  if (action === 'channel') {
+    const channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId(`event-edit-channel:${eventId}`)
+      .setPlaceholder('Выберите новый канал')
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
+    return interaction.update({
+      content: 'Выберите канал, в который перенести ивент:',
+      components: [new ActionRowBuilder().addComponents(channelSelect)],
+    });
+  }
 }
 
 async function handleEditModalSubmit(interaction) {
@@ -644,10 +688,10 @@ async function handleEditModalSubmit(interaction) {
 
     // Notify participants about date change
     const mainParticipants = participantService.getMain(eventId);
-    if (mainParticipants.length > 0) {
+    if (mainParticipants.length > 0 && event.channel_id) {
       const mentions = mainParticipants.map(p => `<@${p.user_id}>`).join(' ');
       try {
-        const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
+        const channel = await interaction.client.channels.fetch(event.channel_id);
         await channel.send(`📅 Дата ивента **${event.name}** изменена на **${formatMSK(parsed.date)}**!\n${mentions}`);
       } catch {}
     }
@@ -675,26 +719,30 @@ async function handleEditModalSubmit(interaction) {
     eventService.update(eventId, { reactions: JSON.stringify(reactions) });
 
     // Re-add reactions to message
-    try {
-      const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-      const updatedEvent = eventService.getById(eventId);
-      if (updatedEvent.message_id) {
-        const msg = await channel.messages.fetch(updatedEvent.message_id);
-        await msg.reactions.removeAll();
-        for (const emoji of reactions) {
-          await msg.react(emoji).catch(() => {});
+    if (event.channel_id) {
+      try {
+        const channel = await interaction.client.channels.fetch(event.channel_id);
+        const updatedEvent = eventService.getById(eventId);
+        if (updatedEvent.message_id) {
+          const msg = await channel.messages.fetch(updatedEvent.message_id);
+          await msg.reactions.removeAll();
+          for (const emoji of reactions) {
+            await msg.react(emoji).catch(() => {});
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   // Update embed
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    const updatedEvent = eventService.getById(eventId);
-    const participants = participantService.getAll(eventId);
-    await embedService.update(channel, updatedEvent, participants);
-  } catch {}
+  if (event.channel_id) {
+    try {
+      const channel = await interaction.client.channels.fetch(event.channel_id);
+      const updatedEvent = eventService.getById(eventId);
+      const participants = participantService.getAll(eventId);
+      await embedService.update(channel, updatedEvent, participants);
+    } catch {}
+  }
 
   await interaction.reply({ content: '✅ Ивент обновлён!', flags: 64 });
 }
@@ -712,18 +760,14 @@ async function handleEditAddUser(interaction) {
   const mainReaction = reactions.find(r => r !== '❌') || '✅';
   const result = participantService.add(eventId, userId, mainReaction);
 
-  // Update embed
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    const participants = participantService.getAll(eventId);
-    await embedService.update(channel, event, participants);
-  } catch {}
-
-  // Notify user
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    await channel.send(`<@${userId}> добавлен в ивент **${event.name}**${result.isReserve ? ' (в очередь запасных)' : ''}!`);
-  } catch {}
+  if (event.channel_id) {
+    try {
+      const channel = await interaction.client.channels.fetch(event.channel_id);
+      const participants = participantService.getAll(eventId);
+      await embedService.update(channel, event, participants);
+      await channel.send(`<@${userId}> добавлен в ивент **${event.name}**${result.isReserve ? ' (в очередь запасных)' : ''}!`);
+    } catch {}
+  }
 
   await interaction.update({
     content: `✅ <@${userId}> добавлен${result.isReserve ? ' в очередь запасных' : ''}.`,
@@ -742,24 +786,68 @@ async function handleEditRemoveUser(interaction) {
 
   const promoted = participantService.remove(eventId, userId);
 
-  // Update embed
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    const participants = participantService.getAll(eventId);
-    await embedService.update(channel, event, participants);
-  } catch {}
-
-  // Notify
-  try {
-    const channel = await interaction.client.channels.fetch(EVENTS_CHANNEL_ID);
-    await channel.send(`<@${userId}> убран из ивента **${event.name}**.`);
-    if (promoted) {
-      await channel.send(`<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`);
-    }
-  } catch {}
+  if (event.channel_id) {
+    try {
+      const channel = await interaction.client.channels.fetch(event.channel_id);
+      const participants = participantService.getAll(eventId);
+      await embedService.update(channel, event, participants);
+      await channel.send(`<@${userId}> убран из ивента **${event.name}**.`);
+      if (promoted) {
+        await channel.send(`<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`);
+      }
+    } catch {}
+  }
 
   await interaction.update({
     content: `✅ <@${userId}> убран из ивента.`,
+    components: [],
+  });
+}
+
+async function handleEditChannelSelect(interaction) {
+  const eventId = parseInt(interaction.customId.split(':')[1], 10);
+  const newChannelId = interaction.values[0];
+
+  const event = eventService.getById(eventId);
+  if (!event || event.status !== 'active') {
+    return interaction.update({ content: 'Ивент не найден или неактивен.', components: [] });
+  }
+
+  if (newChannelId === event.channel_id) {
+    return interaction.update({ content: 'Канал не изменился.', components: [] });
+  }
+
+  let newChannel;
+  try {
+    newChannel = await interaction.client.channels.fetch(newChannelId);
+  } catch {
+    return interaction.update({ content: '❌ Не удалось получить новый канал. Проверьте права бота.', components: [] });
+  }
+
+  // Try to delete the old message; ignore failures (message may already be gone or bot lacks perms)
+  if (event.channel_id && event.message_id) {
+    try {
+      const oldChannel = await interaction.client.channels.fetch(event.channel_id);
+      const oldMsg = await oldChannel.messages.fetch(event.message_id);
+      await oldMsg.delete();
+    } catch {}
+  }
+
+  try {
+    const participants = participantService.getAll(eventId);
+    const message = await embedService.postNew(newChannel, event, participants);
+    eventService.setChannelId(eventId, newChannelId);
+    eventService.setMessageId(eventId, message.id);
+  } catch (err) {
+    console.error(`Failed to repost event #${eventId} to new channel:`, err);
+    return interaction.update({
+      content: `❌ Не удалось запостить ивент в <#${newChannelId}>. Проверьте права бота.`,
+      components: [],
+    });
+  }
+
+  await interaction.update({
+    content: `✅ Ивент перенесён в <#${newChannelId}>.`,
     components: [],
   });
 }

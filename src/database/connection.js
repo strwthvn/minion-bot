@@ -29,6 +29,7 @@ function migrate(db) {
       participant_limit INTEGER,
       reactions TEXT DEFAULT '["✅","❌"]',
       message_id TEXT,
+      channel_id TEXT,
       status TEXT DEFAULT 'active',
       reminder_24h INTEGER DEFAULT 0,
       reminder_1h INTEGER DEFAULT 0,
@@ -47,6 +48,14 @@ function migrate(db) {
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
     );
   `);
+
+  const columns = db.prepare('PRAGMA table_info(events)').all();
+  if (!columns.some(c => c.name === 'channel_id')) {
+    db.exec('ALTER TABLE events ADD COLUMN channel_id TEXT');
+    // Backfill active events with the legacy hardcoded channel so they keep working post-migration
+    db.prepare("UPDATE events SET channel_id = ? WHERE channel_id IS NULL AND status = 'active'")
+      .run('1475429537742454785');
+  }
 }
 
 function close() {

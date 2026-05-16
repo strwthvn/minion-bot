@@ -1,11 +1,11 @@
 const { getDb } = require('../database/connection');
 
 const eventService = {
-  create({ name, description, dateTime, creatorId, pingRoleId, participantLimit, reactions }) {
+  create({ name, description, dateTime, creatorId, pingRoleId, participantLimit, reactions, channelId }) {
     const db = getDb();
     const stmt = db.prepare(`
-      INSERT INTO events (name, description, date_time, creator_id, ping_role_id, participant_limit, reactions)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (name, description, date_time, creator_id, ping_role_id, participant_limit, reactions, channel_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       name,
@@ -15,6 +15,7 @@ const eventService = {
       pingRoleId || null,
       participantLimit || null,
       JSON.stringify(reactions),
+      channelId,
     );
     return result.lastInsertRowid;
   },
@@ -55,6 +56,11 @@ const eventService = {
   setMessageId(id, messageId) {
     const db = getDb();
     db.prepare('UPDATE events SET message_id = ? WHERE id = ?').run(messageId, id);
+  },
+
+  setChannelId(id, channelId) {
+    const db = getDb();
+    db.prepare('UPDATE events SET channel_id = ? WHERE id = ?').run(channelId, id);
   },
 
   setReminderFlag(id, flag) {

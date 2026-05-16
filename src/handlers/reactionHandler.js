@@ -1,4 +1,3 @@
-const { EVENTS_CHANNEL_ID } = require('../config');
 const eventService = require('../services/eventService');
 const participantService = require('../services/participantService');
 const embedService = require('../services/embedService');
@@ -17,7 +16,6 @@ async function handleReactionAdd(reaction, user, client) {
   }
 
   if (user.bot) return;
-  if (reaction.message.channel.id !== EVENTS_CHANNEL_ID) return;
 
   const event = eventService.getByMessageId(reaction.message.id);
   if (!event || event.status !== 'active') return;
@@ -81,7 +79,6 @@ async function handleReactionRemove(reaction, user, client) {
   }
 
   if (user.bot) return;
-  if (reaction.message.channel.id !== EVENTS_CHANNEL_ID) return;
 
   const event = eventService.getByMessageId(reaction.message.id);
   if (!event || event.status !== 'active') return;
