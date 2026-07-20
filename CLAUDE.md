@@ -53,3 +53,7 @@ Config via `.env` (see `.env.example`): `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `D
 ## Deploy
 
 Push to `master` triggers GitHub Actions (`.github/workflows/deploy.yml`): SSH into server, pull, `docker compose up -d --build`.
+
+## Git
+
+Commit messages for this project are written in Russian. With prefix feat- fix- doc- and another
