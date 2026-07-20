@@ -23,3 +23,13 @@ jobs:
             docker compose up -d --build --force-recreate &&
             docker image prune -f
           '
+
+      # Discord only shows commands that were PUT to its registry, so a code deploy
+      # alone never surfaces a new or changed command. One-off container instead of
+      # exec, so this does not race the freshly recreated bot coming up.
+      - name: Register slash commands
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            cd ~/minion-bot &&
+            docker compose run --rm -T --no-deps bot npm run deploy
+          '
