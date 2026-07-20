@@ -16,6 +16,7 @@ const {
 const eventService = require('../services/eventService');
 const participantService = require('../services/participantService');
 const embedService = require('../services/embedService');
+const eventMessageService = require('../services/eventMessageService');
 const { parse, formatMSK } = require('../utils/dateParser');
 
 const ITEMS_PER_PAGE = 5;
@@ -423,6 +424,7 @@ async function finalizeEventCreation(interaction, data, pingRoleId) {
     participantLimit: data.limit,
     reactions: data.reactions,
     channelId: data.channelId,
+    guildId: interaction.guildId,
   });
 
   const event = eventService.getById(eventId);
@@ -513,7 +515,7 @@ async function handleCancelConfirm(interaction) {
     try {
       const channel = await interaction.client.channels.fetch(event.channel_id);
       if (mentions) {
-        await channel.send(`❌ Ивент **${event.name}** отменён!\n${mentions}`);
+        await eventMessageService.send(channel, eventId, `❌ Ивент **${event.name}** отменён!\n${mentions}`);
       }
       const participants = participantService.getAll(eventId);
       const updatedEvent = eventService.getById(eventId);
@@ -692,7 +694,11 @@ async function handleEditModalSubmit(interaction) {
       const mentions = mainParticipants.map(p => `<@${p.user_id}>`).join(' ');
       try {
         const channel = await interaction.client.channels.fetch(event.channel_id);
-        await channel.send(`📅 Дата ивента **${event.name}** изменена на **${formatMSK(parsed.date)}**!\n${mentions}`);
+        await eventMessageService.send(
+          channel,
+          eventId,
+          `📅 Дата ивента **${event.name}** изменена на **${formatMSK(parsed.date)}**!\n${mentions}`,
+        );
       } catch {}
     }
   }
@@ -765,7 +771,11 @@ async function handleEditAddUser(interaction) {
       const channel = await interaction.client.channels.fetch(event.channel_id);
       const participants = participantService.getAll(eventId);
       await embedService.update(channel, event, participants);
-      await channel.send(`<@${userId}> добавлен в ивент **${event.name}**${result.isReserve ? ' (в очередь запасных)' : ''}!`);
+      await eventMessageService.send(
+        channel,
+        eventId,
+        `<@${userId}> добавлен в ивент **${event.name}**${result.isReserve ? ' (в очередь запасных)' : ''}!`,
+      );
     } catch {}
   }
 
@@ -791,9 +801,13 @@ async function handleEditRemoveUser(interaction) {
       const channel = await interaction.client.channels.fetch(event.channel_id);
       const participants = participantService.getAll(eventId);
       await embedService.update(channel, event, participants);
-      await channel.send(`<@${userId}> убран из ивента **${event.name}**.`);
+      await eventMessageService.send(channel, eventId, `<@${userId}> убран из ивента **${event.name}**.`);
       if (promoted) {
-        await channel.send(`<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`);
+        await eventMessageService.send(
+          channel,
+          eventId,
+          `<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`,
+        );
       }
     } catch {}
   }

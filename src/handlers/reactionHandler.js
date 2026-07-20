@@ -1,6 +1,7 @@
 const eventService = require('../services/eventService');
 const participantService = require('../services/participantService');
 const embedService = require('../services/embedService');
+const eventMessageService = require('../services/eventMessageService');
 
 async function ensureFull(reaction, user) {
   if (reaction.partial) await reaction.fetch();
@@ -34,7 +35,9 @@ async function handleReactionAdd(reaction, user, client) {
     if (promoted) {
       // Notify promoted user
       const channel = reaction.message.channel;
-      await channel.send(`<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`).catch(() => {});
+      await eventMessageService
+      .send(channel, event.id, `<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`)
+      .catch(() => {});
     }
 
     // Remove any other reactions this user had
@@ -99,7 +102,9 @@ async function handleReactionRemove(reaction, user, client) {
 
   if (promoted) {
     const channel = reaction.message.channel;
-    await channel.send(`<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`).catch(() => {});
+    await eventMessageService
+      .send(channel, event.id, `<@${promoted}> перемещён из очереди в основной состав ивента **${event.name}**!`)
+      .catch(() => {});
   }
 
   const participants = participantService.getAll(event.id);

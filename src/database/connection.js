@@ -47,14 +47,47 @@ function migrate(db) {
       UNIQUE(event_id, user_id),
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS guild_settings (
+      guild_id TEXT PRIMARY KEY,
+      archive_channel_id TEXT,
+      cleanup_reminders INTEGER NOT NULL DEFAULT 0,
+      cleanup_delay_minutes INTEGER,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Bot messages tied to an event (reminders, notices), so cleanup can delete them later
+    CREATE TABLE IF NOT EXISTS event_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'notice',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_event_messages_event ON event_messages(event_id, kind);
   `);
 
   const columns = db.prepare('PRAGMA table_info(events)').all();
-  if (!columns.some(c => c.name === 'channel_id')) {
+  const hasColumn = name => columns.some(c => c.name === name);
+
+  if (!hasColumn('channel_id')) {
     db.exec('ALTER TABLE events ADD COLUMN channel_id TEXT');
     // Backfill active events with the legacy hardcoded channel so they keep working post-migration
     db.prepare("UPDATE events SET channel_id = ? WHERE channel_id IS NULL AND status = 'active'")
       .run('1475429537742454785');
+  }
+
+  // Guild is needed to resolve per-guild settings; legacy rows are backfilled lazily from the channel
+  if (!hasColumn('guild_id')) db.exec('ALTER TABLE events ADD COLUMN guild_id TEXT');
+
+  // Cleanup bookkeeping — set once so each step runs at most one time per event
+  if (!hasColumn('finished_at')) db.exec('ALTER TABLE events ADD COLUMN finished_at TEXT');
+  if (!hasColumn('archived_at')) db.exec('ALTER TABLE events ADD COLUMN archived_at TEXT');
+  if (!hasColumn('reminders_cleaned')) {
+    db.exec('ALTER TABLE events ADD COLUMN reminders_cleaned INTEGER DEFAULT 0');
   }
 }
 

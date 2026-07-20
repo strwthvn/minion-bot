@@ -1,11 +1,11 @@
 const { getDb } = require('../database/connection');
 
 const eventService = {
-  create({ name, description, dateTime, creatorId, pingRoleId, participantLimit, reactions, channelId }) {
+  create({ name, description, dateTime, creatorId, pingRoleId, participantLimit, reactions, channelId, guildId }) {
     const db = getDb();
     const stmt = db.prepare(`
-      INSERT INTO events (name, description, date_time, creator_id, ping_role_id, participant_limit, reactions, channel_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (name, description, date_time, creator_id, ping_role_id, participant_limit, reactions, channel_id, guild_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       name,
@@ -16,6 +16,7 @@ const eventService = {
       participantLimit || null,
       JSON.stringify(reactions),
       channelId,
+      guildId || null,
     );
     return result.lastInsertRowid;
   },
@@ -50,7 +51,20 @@ const eventService = {
 
   setStatus(id, status) {
     const db = getDb();
-    db.prepare('UPDATE events SET status = ? WHERE id = ?').run(status, id);
+    // finished_at anchors the cleanup delay — for a cancelled event the scheduled
+    // date_time may still be days away, so counting from it would stall cleanup
+    const finishedAt = status === 'active' ? null : new Date().toISOString();
+    db.prepare('UPDATE events SET status = ?, finished_at = ? WHERE id = ?').run(status, finishedAt, id);
+  },
+
+  /** Finished events still sitting in their original channel, awaiting cleanup. */
+  getPendingArchive() {
+    const db = getDb();
+    return db.prepare(`
+      SELECT * FROM events
+      WHERE status IN ('completed', 'cancelled') AND archived_at IS NULL
+      ORDER BY date_time ASC
+    `).all();
   },
 
   setMessageId(id, messageId) {
