@@ -1,0 +1,19 @@
+name: Notify Discord
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Отправить сообщения коммитов в Discord
+        env:
+          COMMITS_JSON: ${{ toJson(github.event.commits) }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          echo "$COMMITS_JSON" | jq -c '.[]' | while IFS= read -r commit; do
+            payload=$(echo "$commit" | jq '{content: "**\(.author.name)**: \(.message)\n\(.url)"}')
+            curl -sf -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL"
+          done
