@@ -8,12 +8,19 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      # В канал уходит только ЗАГОЛОВОК коммита: тело и трейлеры (Co-Authored-By,
+      # служебные ссылки) читателю канала не нужны, а ссылка на коммит рядом.
+      # allowed_mentions — последняя линия обороны: без неё упоминание в сообщении
+      # коммита пингует сервер по-настоящему. Не убирать ни то, ни другое.
       - name: Отправить сообщения коммитов в Discord
         env:
           COMMITS_JSON: ${{ toJson(github.event.commits) }}
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           echo "$COMMITS_JSON" | jq -c '.[]' | while IFS= read -r commit; do
-            payload=$(echo "$commit" | jq '{content: "**\(.author.name)**: \(.message)\n\(.url)"}')
+            payload=$(echo "$commit" | jq '{
+              content: "**\(.author.name)**: \((.message | split("\n")[0] // "") | rtrimstr("\r"))\n\(.url)",
+              allowed_mentions: { parse: [] }
+            }')
             curl -sf -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL"
           done
