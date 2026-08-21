@@ -19,6 +19,9 @@ const POSTABLE_CHANNELS = [ChannelType.GuildText, ChannelType.GuildAnnouncement]
 // name and a real snowflake. Anything looser renders as an empty reaction.
 const CUSTOM_EMOJI_REGEX = /^<(a?):(\w{2,32}):(\d{17,20})>$/;
 const MESSAGE_LIMIT = 2000;
+// Discord API error codes that prove the target is gone rather than unreachable
+const UNKNOWN_CHANNEL = 10003;
+const UNKNOWN_MESSAGE = 10008;
 const LIST_LIMIT = 25;
 
 const EXPIRED = '❌ Данные конструктора не найдены. Начните заново.';
@@ -503,16 +506,23 @@ async function handleRemovePick(interaction) {
     return interaction.editReply({ content: '❌ Эта реакция уже убрана.', components: [] });
   }
 
+  const { message, forgotten } = await resolveRecordMessage(interaction.client, record);
+  if (forgotten) {
+    return interaction.editReply({
+      content: `❌ Сообщение **#${record.id}** удалено из канала — запись убрана целиком.`,
+      components: [],
+    });
+  }
+
   reactionRoleService.removeBinding(record.id, emoji);
 
-  const message = await fetchRecordMessage(interaction.client, record);
   if (message) {
     await message.reactions.cache.get(emoji)?.remove().catch(() => {});
     await syncMessage(message, record);
   }
 
   await interaction.editReply({
-    content: `✅ Реакция ${binding.emoji_display} больше не выдаёт роль.${message ? '' : '\n⚠️ Само сообщение в канале не найдено — реакция на нём осталась.'}`,
+    content: `✅ Реакция ${binding.emoji_display} больше не выдаёт роль.${message ? '' : '\n⚠️ Сообщение сейчас недоступно — реакция на нём осталась.'}`,
     components: [],
   });
 }
@@ -551,7 +561,7 @@ async function handleDeleteConfirm(interaction) {
 
   await interaction.deferUpdate();
 
-  const message = await fetchRecordMessage(interaction.client, record);
+  const { message } = await fetchRecordMessage(interaction.client, record);
   if (message) {
     await message.reactions.removeAll().catch(() => {});
   }
@@ -636,10 +646,12 @@ async function applyAddBinding(interaction, data, roleId, role) {
 
   await interaction.deferUpdate();
 
-  const message = await fetchRecordMessage(interaction.client, record);
+  const { message, forgotten } = await resolveRecordMessage(interaction.client, record);
   if (!message) {
     return interaction.editReply({
-      content: '❌ Сообщение не найдено в канале. Возможно, оно удалено — используйте `/reactionrole delete`.',
+      content: forgotten
+        ? `❌ Сообщение **#${record.id}** удалено из канала — запись убрана. Создайте новое через \`/reactionrole create\`.`
+        : '❌ Не удалось получить сообщение из канала. Проверьте права бота и попробуйте ещё раз.',
       components: [],
     });
   }
@@ -683,10 +695,39 @@ async function applyAddBinding(interaction, data, roleId, role) {
 
 // ─── HELPERS ─────────────────────────────────────────────
 
+/**
+ * Fetch the published message. `missing` is true only when Discord confirmed the
+ * message or its channel is gone — a transient failure (lost permission, network,
+ * rate limit) leaves it false so a live record is never dropped by mistake.
+ */
 async function fetchRecordMessage(client, record) {
-  const channel = await client.channels.fetch(record.channel_id).catch(() => null);
-  if (!channel) return null;
-  return channel.messages.fetch(record.message_id).catch(() => null);
+  try {
+    const channel = await client.channels.fetch(record.channel_id);
+    const message = await channel.messages.fetch(record.message_id);
+    return { message, missing: false };
+  } catch (err) {
+    const missing = err.code === UNKNOWN_CHANNEL || err.code === UNKNOWN_MESSAGE;
+    if (!missing) {
+      console.error(`Failed to fetch reaction-role message #${record.id}:`, err.message);
+    }
+    return { message: null, missing };
+  }
+}
+
+/**
+ * Same, but forgets the record when the message is provably gone. This is the
+ * lazy half of the cleanup: the delete listeners miss anything that happened
+ * while the bot was offline, and this catches those on first use.
+ */
+async function resolveRecordMessage(client, record) {
+  const { message, missing } = await fetchRecordMessage(client, record);
+
+  if (missing) {
+    reactionRoleService.remove(record.id);
+    console.log(`Reaction-role message #${record.id} is gone — record dropped.`);
+  }
+
+  return { message, forgotten: missing };
 }
 
 /** Rewrite the published message so its legend matches the current bindings. */
