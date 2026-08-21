@@ -35,6 +35,17 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command);
 }
 
+// Maps an interaction to the handler a command module must export to receive it
+function componentHandlerName(interaction) {
+  if (interaction.isModalSubmit()) return 'handleModal';
+  if (interaction.isButton()) return 'handleButton';
+  if (interaction.isStringSelectMenu()) return 'handleStringSelect';
+  if (interaction.isRoleSelectMenu()) return 'handleRoleSelect';
+  if (interaction.isUserSelectMenu()) return 'handleUserSelect';
+  if (interaction.isChannelSelectMenu()) return 'handleChannelSelect';
+  return null;
+}
+
 // Handle interactions
 client.on('interactionCreate', async (interaction) => {
   try {
@@ -45,33 +56,16 @@ client.on('interactionCreate', async (interaction) => {
       return await command.execute(interaction);
     }
 
-    // Route event-related interactions to the event command module
-    const eventCommand = client.commands.get('event');
-    if (!eventCommand) return;
+    // Components and modals: custom IDs are `<command>-<action>[:args]`, so the
+    // prefix before the first dash names the command module that owns the handler
+    const handlerName = componentHandlerName(interaction);
+    if (!handlerName) return;
 
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleModal(interaction);
-    }
+    const command = client.commands.get(interaction.customId.split('-')[0]);
+    const handler = command?.[handlerName];
+    if (!handler) return;
 
-    if (interaction.isButton() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleButton(interaction);
-    }
-
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleStringSelect(interaction);
-    }
-
-    if (interaction.isRoleSelectMenu() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleRoleSelect(interaction);
-    }
-
-    if (interaction.isUserSelectMenu() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleUserSelect(interaction);
-    }
-
-    if (interaction.isChannelSelectMenu() && interaction.customId.startsWith('event-')) {
-      return await eventCommand.handleChannelSelect(interaction);
-    }
+    return await handler(interaction);
   } catch (error) {
     console.error('Interaction error:', error);
 
