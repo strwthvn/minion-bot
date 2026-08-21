@@ -63,3 +63,18 @@ Push to `master` triggers GitHub Actions (`.github/workflows/deploy.yml`): SSH i
 ## Git
 
 Commit messages for this project are written in Russian. With prefix feat- fix- doc- and another
+
+### Commit subjects are published to Discord
+
+Every push to `master` sends the **subject line** of each commit to the community's info
+channel through `.github/workflows/notify-discord.yml`. Treat it as public release-note
+text, not as a note to yourself:
+
+- **No mentions in the subject** — `@everyone`, `@here`, `<@&role_id>`, `<@user_id>`.
+  The webhook now sends `allowed_mentions: { parse: [] }`, so they no longer ping anyone,
+  but they still read as if the channel is being addressed. This rule exists because a
+  commit body once contained `@everyone` and pinged the whole server.
+- **Write it for a reader of that channel**: what changed in the bot, not how it is wired
+  internally. Implementation detail belongs in the commit body — the body is not sent.
+- The workflow deliberately sends only the first line and suppresses mentions. Keep both
+  when touching it; either one alone leaves the channel exposed.
