@@ -10,6 +10,8 @@ module.exports = {
 
   EMBED_FOOTER: 'Minion Bot Events',
 
+  MAX_REACTION_ROLES: 20, // Discord allows at most 20 reactions per message
+
   MOVE_TARGET_VOICE_CHANNEL_ID: '1453545453441257502', // Под Яйки
   MOVE_LOG_TEXT_CHANNEL_ID: '1328734057961488437',
 };

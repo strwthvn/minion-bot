@@ -68,6 +68,32 @@ function migrate(db) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_event_messages_event ON event_messages(event_id, kind);
+
+    -- Messages that hand out roles by reaction
+    CREATE TABLE IF NOT EXISTS reaction_role_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- emoji is the match key from the gateway event (reaction.emoji.id ?? reaction.emoji.name),
+    -- emoji_display is what we react and render with (the char, or <:name:id>)
+    CREATE TABLE IF NOT EXISTS reaction_role_bindings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_row_id INTEGER NOT NULL,
+      emoji TEXT NOT NULL,
+      emoji_display TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      UNIQUE(message_row_id, emoji),
+      FOREIGN KEY (message_row_id) REFERENCES reaction_role_messages(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reaction_role_bindings_message ON reaction_role_bindings(message_row_id);
   `);
 
   const columns = db.prepare('PRAGMA table_info(events)').all();

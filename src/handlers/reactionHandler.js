@@ -2,6 +2,7 @@ const eventService = require('../services/eventService');
 const participantService = require('../services/participantService');
 const embedService = require('../services/embedService');
 const eventMessageService = require('../services/eventMessageService');
+const roleReactionHandler = require('./roleReactionHandler');
 
 async function ensureFull(reaction, user) {
   if (reaction.partial) await reaction.fetch();
@@ -18,8 +19,10 @@ async function handleReactionAdd(reaction, user, client) {
 
   if (user.bot) return;
 
+  // Not an event message — it may still be a reaction-role dispenser
   const event = eventService.getByMessageId(reaction.message.id);
-  if (!event || event.status !== 'active') return;
+  if (!event) return roleReactionHandler.handleAdd(reaction, user);
+  if (event.status !== 'active') return;
 
   const reactions = JSON.parse(event.reactions);
   const emoji = reaction.emoji.name;
@@ -83,8 +86,10 @@ async function handleReactionRemove(reaction, user, client) {
 
   if (user.bot) return;
 
+  // Not an event message — it may still be a reaction-role dispenser
   const event = eventService.getByMessageId(reaction.message.id);
-  if (!event || event.status !== 'active') return;
+  if (!event) return roleReactionHandler.handleRemove(reaction, user);
+  if (event.status !== 'active') return;
 
   const reactions = JSON.parse(event.reactions);
   const emoji = reaction.emoji.name;
