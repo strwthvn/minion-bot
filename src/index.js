@@ -7,6 +7,11 @@ const { getDb, close: closeDb } = require('./database/connection');
 const { handleReactionAdd, handleReactionRemove } = require('./handlers/reactionHandler');
 const { handleVoiceStateUpdate } = require('./handlers/voiceMoveHandler');
 const { handleMention } = require('./handlers/mentionHandler');
+const {
+  handleMessageDelete,
+  handleMessageDeleteBulk,
+  handleChannelDelete,
+} = require('./handlers/reactionRoleCleanupHandler');
 const reminderService = require('./services/reminderService');
 
 const client = new Client({
@@ -83,6 +88,11 @@ client.on('interactionCreate', async (interaction) => {
 // Reactions
 client.on('messageReactionAdd', (reaction, user) => handleReactionAdd(reaction, user, client));
 client.on('messageReactionRemove', (reaction, user) => handleReactionRemove(reaction, user, client));
+
+// Forget reaction-role messages that no longer exist
+client.on('messageDelete', (message) => handleMessageDelete(message));
+client.on('messageDeleteBulk', (messages) => handleMessageDeleteBulk(messages));
+client.on('channelDelete', (channel) => handleChannelDelete(channel));
 
 // Mentions
 client.on('messageCreate', (message) => handleMention(message, client));

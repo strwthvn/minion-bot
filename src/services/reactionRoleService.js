@@ -98,6 +98,33 @@ const reactionRoleService = {
   },
 
   /**
+   * Drop the record for a message that no longer exists.
+   * Returns how many rows went away, so callers can stay quiet about the
+   * overwhelming majority of deleted messages that hand out no roles.
+   */
+  removeByMessageId(messageId) {
+    const db = getDb();
+    return db.prepare('DELETE FROM reaction_role_messages WHERE message_id = ?').run(messageId).changes;
+  },
+
+  /** Same, for a bulk purge. Discord caps a bulk delete at 100 messages. */
+  removeByMessageIds(messageIds) {
+    if (messageIds.length === 0) return 0;
+
+    const db = getDb();
+    const placeholders = messageIds.map(() => '?').join(', ');
+    return db.prepare(
+      `DELETE FROM reaction_role_messages WHERE message_id IN (${placeholders})`,
+    ).run(...messageIds).changes;
+  },
+
+  /** Same, for every record in a channel that was deleted. */
+  removeByChannel(channelId) {
+    const db = getDb();
+    return db.prepare('DELETE FROM reaction_role_messages WHERE channel_id = ?').run(channelId).changes;
+  },
+
+  /**
    * The full message text: the author's own text plus an auto-generated legend.
    * Single source of truth — used both when publishing and after every binding change.
    */
